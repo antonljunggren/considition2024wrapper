@@ -2,11 +2,15 @@
 using Core.Utils;
 using Microsoft.SemanticKernel;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
+using System.Net.Mime;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using static Core.Models.Award;
 
@@ -19,6 +23,23 @@ namespace Core.Services
         public GameService(InMemoryStorage storage)
         {
             _storage = storage;
+        }
+
+        public class PascalCaseContractResolver : DefaultContractResolver
+        {
+            protected override string ResolvePropertyName(string propertyName)
+            {
+                // Convert snake_case to PascalCase
+                return ConvertSnakeCaseToPascalCase(propertyName);
+            }
+
+            private string ConvertSnakeCaseToPascalCase(string snakeCase)
+            {
+                return Regex.Replace(snakeCase, @"(^|_)([a-z])", match =>
+                {
+                    return match.Groups[2].Value.ToUpper(CultureInfo.InvariantCulture);
+                });
+            }
         }
 
         [KernelFunction("submit_game_data")]
@@ -38,6 +59,7 @@ namespace Core.Services
             while (monthNotAdded > 0)
             {
                 _storage.AddActionsForOneMonth(skipMonth);
+                monthNotAdded--;
             }
 
             GameInput gameInput = new GameInput()
@@ -47,12 +69,19 @@ namespace Core.Services
                 MapName = _storage.GetMapData().Name
             };
 
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = new PascalCaseContractResolver(),
+                Formatting = Formatting.Indented // Optional for pretty print
+            };
+
+            var gameJson = JsonConvert.SerializeObject(gameInput, settings);
+
             using var httpClient = new HttpClient();
-            var content = new StringContent(JsonConvert.SerializeObject(gameInput));
+            var content = new StringContent(gameJson);
+            content.Headers.ContentType  = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             content.Headers.Add("x-api-key", _storage.GetConsidtionApiKey());
             var response = await httpClient.PostAsync("https://api.considition.com/game", content);
-
-            response.EnsureSuccessStatusCode();
 
             var serverResponse = await response.Content.ReadAsStringAsync();
             _storage.SetLastResponseFromServer(serverResponse);
