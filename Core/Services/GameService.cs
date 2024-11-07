@@ -26,6 +26,20 @@ namespace Core.Services
         [return: Description("The response from the server telling us how our game went, score wise")]
         public async Task<string> SubmitGameData()
         {
+            var monthNotAdded = _storage.GetMapData().GameLengthInMonths -  _storage.GetAllMonthlyActions().Count();
+
+            var skipMonth = new Dictionary<string, CustomerAction>();
+
+            foreach (var loanProposals in _storage.GetCustomerLoanProposals())
+            {
+                skipMonth.Add(loanProposals.CustomerName, new CustomerAction(CustomerAction.CustomerActionType.Skip, AwardType.None));
+            }
+
+            while (monthNotAdded > 0)
+            {
+                _storage.AddActionsForOneMonth(skipMonth);
+            }
+
             GameInput gameInput = new GameInput()
             {
                 Iterations = _storage.GetAllMonthlyActions(),
